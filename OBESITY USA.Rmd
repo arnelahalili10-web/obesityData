@@ -4,9 +4,7 @@ title: |
 subtitle: | 
   <center> Factors influencing obesity among adults in the US </center>
 author: | 
-  <center> Amal Ahmed - 904146 </center>
   <center> Arnela Halili - 887744 </center>
-  <center> Maha Gasim - 898396 </center>
 date: | 
   <center>`r Sys.Date()`</center>
 output: openintro::lab_report
