@@ -1,0 +1,1535 @@
+---
+title: | 
+  <center> Health Data Science Project EM1413 23/24</center>
+subtitle: | 
+  <center> Factors influencing obesity among adults in the US </center>
+author: | 
+  <center> Amal Ahmed - 904146 </center>
+  <center> Arnela Halili - 887744 </center>
+  <center> Maha Gasim - 898396 </center>
+date: | 
+  <center>`r Sys.Date()`</center>
+output: openintro::lab_report
+---
+
+# Problem definition
+
+> In this project we are trying to identify the various determinants contributing to the prevalence of obesity among adults in the United States, including social, economic, and behavioral factors <br> 
+
+# Abstract and Introduction
+
+> We will use the BRFSS (Behavioral Risk Factor Surveillance System) dataset. It is a cross-sectional telephone survey that state health departments conduct monthly over landline telephones and cellular telephones with a standardised questionnaire and technical and methodologic assistance from the CDC (Centers for Disease Control and Prevention).
+BRFSS is used to collect prevalence data among U.S. residents regarding their risk behaviours and preventive health practices that can affect their health status. We decided on the topic of the factors that influence obesity among adults in the U.S. Studying the factors influencing obesity among adults in the U.S. is crucial.
+Obesity is a significant public health issue in the U.S., contributing to various chronic diseases like heart disease, diabetes, and certain cancers. Understanding the factors contributing to obesity can inform public health policies and interventions aimed at prevention and management. Obesity-related healthcare costs are substantial, impacting both individuals and the healthcare system as a whole. 
+<br> <br> 
+WHY IS IT IMPORTANT TO KNOW ABOUT OBESITY?
+By identifying the factors influencing obesity, healthcare providers can develop more effective strategies for prevention and treatment, potentially reducing healthcare expenditures. Obesity can have profound social and economic consequences, including reduced quality of life, discrimination, and decreased productivity. Exploring the factors behind obesity can help address underlying societal issues such as access to healthy foods, socioeconomic disparities, and cultural influences. 
+<br> <br> 
+Researching the factors influencing obesity fosters innovation in healthcare and public health. It encourages the development of new technologies, interventions, and policies aimed at combating obesity and promoting healthier lifestyles. Overall, investigating the factors influencing obesity among adults in the U.S. is essential for improving public health outcomes, reducing healthcare costs, addressing social and economic disparities, promoting individual well-being, and driving innovation in healthcare and public health practices.This is a fundamental public health question and can provide insights into preventive strategies and policymaking. 
+<br> <br> 
+How do we measure obesity in simple terms?
+Obesity is typically defined by the Body Mass Index (BMI) with a threshold value (e.g., BMI ≥ 30 as obese). Here's a detailed breakdown of how you might approach analyzing this question using different statistical models, specifying potential variables and offering some analytical tips.<br> <br> 
+
+
+# Uploading and preparing the data set
+
+We will upload all the necessary libraries we will use in our analysis here.
+
+```{r}
+library(dplyr)
+library(readxl)
+library(gplots)
+library(ggplot2)
+library(maps)
+library(car)
+library(caret)
+library(MASS)
+library(boot)
+library(geepack)
+library(tidyr)
+library(nnet)
+library(mlogit)
+library(RColorBrewer)
+library(gridExtra)
+library(knitr)
+library(kableExtra)
+library(jtools)
+library(VGAM)
+library(reshape2)
+library(glmmTMB)
+library(effects)
+library(sjPlot)
+```
+
+
+```{r}
+# Specify the path to your csv file
+file_path <- "Demo+Health data.xlsx"
+```
+
+
+## Loading the date 
+
+```{r}
+# Read the Excel file
+data <- read_excel(file_path)
+head(data)
+```
+
+```{r}
+dim(data)
+```
+We see that we have 445 132 observations, which is good to work on 
+a big data project. So let us carry on. HOPE YOU WILL ENJOY OUR RIDE :) !
+
+
+## Data Cleaning
+
+```{r}
+# Get the column names
+column_names <- names(data)
+
+# Get the data types of each column
+data_types <- sapply(data, class)
+
+# Get the number of non-null values in each column
+non_null_counts <- sapply(data, function(x) sum(!is.na(x)))
+
+# Create a summary data frame
+summary_data <- data.frame(column_names, data_types, non_null_counts)
+
+# Rename the columns of the summary data frame
+colnames(summary_data) <- c("Column Name", "Data Type", "Non-Null Count")
+
+# Print the summary data frame
+print(summary_data)
+#we see that we have the same number of observations
+#non null data, so we do not have missing values.
+```
+
+
+
+```{r}
+# Get the number of missing values in each column
+missing_counts <- colSums(is.na(data))
+
+# Sort the missing value counts in descending order
+missing_counts <- sort(missing_counts, decreasing = TRUE)
+
+# Filter out columns with no missing values
+missing_counts <- missing_counts[missing_counts > 0]
+
+# Print the result
+print(missing_counts)
+```
+
+```{r}
+# Create a new column for index
+data$index <- seq_len(nrow(data))
+
+# Print the dataframe with the new index
+print(data)
+```
+
+```{r}
+# Remove rows with null values
+data <- na.omit(data)
+
+# Print the dataframe after removing null values
+print(data)
+```
+
+```{r}
+#New dimension after deleting the missing values
+dim(data)
+```
+
+```{r}
+# Re_index
+data$index <- paste0("row", seq_len(nrow(data)))
+```
+
+
+We will remove the values for the questions when the respondents let it blank and they are coded under a number, in this case the `omi` function can not delete them so we had to do it manually for each variabel following the dataset's codebook.
+```{r}
+# Define the columns and values to remove
+columns_to_remove <- c('genhlth', 'poorhlth', 'cvdcrhd4', 'diabete4', 'marital', 
+                       'educa', 'employ1', 'income3', 'smokday2', '_totinda', '_sex', '_ageg5yr')
+
+#List with values to remove
+values_to_remove <- list(
+  genhlth = c(9, 7),  
+  poorhlth = c(88, 77, 99),  
+  cvdcrhd4 = c(7, 9),        
+  diabete4 = c(7, 9),        
+  marital = c(9),            
+  educa = c(9),              
+  employ1 = c(9),            
+  income3 = c(77, 99),       
+  smokday2 = c(7, 9),       
+  "_totinda" = c(9),        
+  "_ageg5yr"= c(14)        
+)
+
+# Function to filter out rows with specific values in each column
+filter_values <- function(data, column_name, values) {
+  data %>%
+    filter(!(!!rlang::sym(column_name) %in% values))
+}
+
+# Apply the function to each column
+filtered_data <- data
+for (column_name in columns_to_remove) {
+  filtered_data <- filter_values(filtered_data, column_name, values_to_remove[[column_name]])
+}
+
+# Print the first few rows of the filtered data frame
+print(head(filtered_data))
+```
+
+
+```{r}
+#The dimension after deleting the missing values with a specific number
+dim(filtered_data)
+```
+We will change the names of the columns, so it will be easier for us to understand and work with.
+
+```{r}
+names(filtered_data)
+# Change column names
+names(filtered_data) <- c("state", "genhlth", "poorhlth", "hrtdisease",	"diabetic",	"marital", "edu",	"employstatus", "income", "smokeday", "totinda", "sex", "age5cat", "bmi5", "bmi", "index", "obesity_status")
+
+# Print new column names
+print(names(filtered_data)) 
+```
+
+
+```{r}
+summary(filtered_data)
+```
+We will make less categories for the the specific columns and mapping the states as they were coded as numbers from 1 to 78, we mapped them to their corsponding names.
+
+```{r}
+#Mapping the states
+state_mapping <- c(
+  `1` = "Alabama", `2` = "Alaska", `4` = "Arizona", `5` = "Arkansas", 
+  `6` = "California", `8` = "Colorado", `9` = "Connecticut", `10` = "Delaware", 
+  `11` = "District of Columbia", `12` = "Florida", `13` = "Georgia", `15` = "Hawaii", 
+  `16` = "Idaho", `17` = "Illinois", `18` = "Indiana", `19` = "Iowa", 
+  `20` = "Kansas", `21` = "Kentucky", `22` = "Louisiana", `23` = "Maine", 
+  `24` = "Maryland", `25` = "Massachusetts", `26` = "Michigan", `27` = "Minnesota", 
+  `28` = "Mississippi", `29` = "Missouri", `30` = "Montana", `31` = "Nebraska", 
+  `32` = "Nevada", `33` = "New Hampshire", `34` = "New Jersey", `35` = "New Mexico", 
+  `36` = "New York", `37` = "North Carolina", `38` = "North Dakota", `39` = "Ohio", 
+  `40` = "Oklahoma", `41` = "Oregon", `42` = "Pennsylvania", `44` = "Rhode Island", 
+  `45` = "South Carolina", `46` = "South Dakota", `47` = "Tennessee", `48` = "Texas", 
+  `49` = "Utah", `50` = "Vermont", `51` = "Virginia", `53` = "Washington", 
+  `54` = "West Virginia", `55` = "Wisconsin", `56` = "Wyoming", `66` = "Guam", 
+  `72` = "Puerto Rico", `78` = "Virgin Islands"
+)
+
+edu_mapping <- c(
+  "Never attended school or only kindergarten" = "Elementary or less",
+  "Grades 1 through 8 (Elementary)" = "Elementary or less",
+  "Grades 9 through 11 (Some high school)" = "High school or equivalent",
+  "Grade 12 or GED (High school graduate)" = "High school or equivalent",
+  "College 1 year to 3 years (Some college or technical school)" = "College or more",
+  "College 4 years or more (College graduate)" = "College or more"
+)
+
+# Convert the edu column from numeric codes to descriptive names using the mapping
+edu_levels <- c(
+  "Never attended school or only kindergarten",
+  "Grades 1 through 8 (Elementary)",
+  "Grades 9 through 11 (Some high school)",
+  "Grade 12 or GED (High school graduate)",
+  "College 1 year to 3 years (Some college or technical school)",
+  "College 4 years or more (College graduate)"
+)
+
+# Ensure age5cat is correctly labeled
+age5cat_labels <- c(
+  "Age 18 to 24", "Age 25 to 29", "Age 30 to 34", "Age 35 to 39", 
+  "Age 40 to 44", "Age 45 to 49", "Age 50 to 54", "Age 55 to 59", 
+  "Age 60 to 64", "Age 65 to 69", "Age 70 to 74", "Age 75 to 79", 
+  "Age 80 or older"
+)
+
+# Convert age5cat to a factor with the correct levels and labels
+filtered_data$age5cat <- factor(filtered_data$age5cat, levels = 1:13, labels = age5cat_labels)
+
+# Create the age5cat mapping to fewer categories
+age5cat_mapping <- c(
+  "Age 18 to 24" = "Age 18 to 29",
+  "Age 25 to 29" = "Age 18 to 29",
+  "Age 30 to 34" = "Age 30 to 39",
+  "Age 35 to 39" = "Age 30 to 39",
+  "Age 40 to 44" = "Age 40 to 54",
+  "Age 45 to 49" = "Age 40 to 54",
+  "Age 50 to 54" = "Age 40 to 54",
+  "Age 55 to 59" = "Age 55 to 69",
+  "Age 60 to 64" = "Age 55 to 69",
+  "Age 65 to 69" = "Age 55 to 69",
+  "Age 70 to 74" = "Age 70 and older",
+  "Age 75 to 79" = "Age 70 and older",
+  "Age 80 or older" = "Age 70 and older"
+)
+
+filtered_data <- filtered_data %>% mutate(obesity_status = factor(ifelse(bmi == 4, 1, 0), levels = c(0, 1), labels = c("Not Obese", "Obese")))
+
+
+# Assuming filtered_data is your dataframe and income is the current income factor
+# Define new income categories
+filtered_data$income_group <- cut(as.numeric(filtered_data$income), 
+                                  breaks = c(0, 4, 7, 11), 
+                                  labels = c("Low Income", "Middle Income", "High Income"),
+                                  include.lowest = TRUE)
+
+# Create a new variable 'diabetic_status' based on the existing 'diabetic' variable
+filtered_data$diabetic_status <- ifelse(filtered_data$diabetic %in% c(1, 2), 1, 
+                                        ifelse(filtered_data$diabetic %in% c(3, 4), 2, NA))
+
+```
+
+
+```{r}
+# Map the age5cat column to fewer categories
+filtered_data$age5cat <- as.factor(age5cat_mapping[as.character(filtered_data$age5cat)])
+
+# Ensure edu is a factor with the correct levels and labels
+filtered_data$edu <- factor(filtered_data$edu, levels = 1:6, labels = edu_levels)
+
+# Map the edu column to fewer categories
+filtered_data$edu <- as.factor(edu_mapping[as.character(filtered_data$edu)])
+
+# Map state codes to state names
+filtered_data$state <- as.factor(state_mapping[as.character(filtered_data$state)])
+
+filtered_data$sex <- factor(filtered_data$sex, levels = c(1, 2), labels = c("Male", "Female"))
+
+# Define the marital status labels as a factor with appropriate levels
+filtered_data$marital <- factor(filtered_data$marital, 
+                                levels = 1:6, 
+                                labels = c("Married", "Divorced", "Widowed", "Separated", "Never married", "Member of an unmarried couple"))
+
+# Define the employment status labels as a factor with appropriate levels
+filtered_data$employstatus <- factor(filtered_data$employstatus, 
+                                     levels = 1:8, 
+                                     labels = c("Employed for wages", "Self-employed", 
+                                                "Out of work for 1 year or more", "Out of work for less than 1 year", 
+                                                "A homemaker", "A student", "Retired", "Unable to work"))
+
+# Define the heart disease status labels
+filtered_data$hrtdisease <- factor(filtered_data$hrtdisease, levels = c(1, 2), labels = c("Yes", "No"))
+
+
+# Display the structure of the filtered_data data frame to confirm changes
+str(filtered_data)
+```
+
+We will convert the column to factors (mainly they are numeric).
+```{r}
+# Convert specified columns to factors in the filtered_data data frame
+filtered_data$genhlth <- as.factor(filtered_data$genhlth)
+filtered_data$poorhlth <- as.factor(filtered_data$poorhlth)
+filtered_data$hrtdisease <- as.factor(filtered_data$hrtdisease)
+filtered_data$diabetic <- as.factor(filtered_data$diabetic)
+filtered_data$marital <- as.factor(filtered_data$marital)
+filtered_data$employstatus <- as.factor(filtered_data$employstatus)
+filtered_data$income <- as.factor(filtered_data$income)
+filtered_data$smokeday <- as.factor(filtered_data$smokeday)
+filtered_data$totinda <- as.factor(filtered_data$totinda)
+filtered_data$sex <- as.factor(filtered_data$sex)
+filtered_data$bmi5 <- as.factor(filtered_data$bmi5)
+filtered_data$obesity_status <- factor(filtered_data$obesity_status)
+filtered_data$diabetic_status <- as.factor(filtered_data$diabetic_status)
+
+# Display the structure of the filtered_data data frame to confirm changes
+str(filtered_data)
+```
+
+
+
+# EDA
+
+First we wanted to see the distribution of our variables 
+
+```{r}
+# Plot the pie chart for gender distribution with percentage labels
+ggplot(filtered_data, aes(x = "", fill = sex)) +
+  geom_bar(width = 1, stat = "count", color = "black") +
+  coord_polar("y") +
+  geom_text(stat = 'count', aes(label = paste0(round(..count.. / sum(..count..) * 100, 1), "%")), 
+            position = position_stack(vjust = 0.5), size = 5, color = "white", fontface = "bold") +
+  scale_fill_manual(values = c("Male" = "blue4", "Female" = "red4")) +
+  labs(title = "Gender Distribution in Our Dataset") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold", margin = margin(t = 20, b = 10)),  
+    axis.title = element_blank(),  
+    axis.text = element_blank(),  
+    axis.ticks = element_blank(),
+    panel.grid = element_blank(),  
+    legend.title = element_blank(),  
+    legend.position = "bottom"
+  )
+```
+
+The bar chart shows that the dataset consists of 18,479 males (46.7%) and 21,072 females (53.3%), indicating a higher representation of females.
+
+
+
+```{r}
+# Plot the bar chart
+ggplot(filtered_data, aes(x = marital)) +
+  geom_bar(fill = "blue4") +
+  geom_text(stat = 'count', aes(label = ..count..), vjust = -0.5, size = 5, color = "black", fontface = "bold") +
+  labs(title = "Distribution of Marital Status", x = "Marital Status", y = "Count") +
+  ylim(0, max(table(filtered_data$marital)) * 1.1) +  
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold", margin = margin(b = 10)),  
+    axis.title = element_text(size = 14),  
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1),  
+    axis.text.y = element_text(size = 12),  
+    panel.grid.major = element_line(size = 0.5, linetype = 'solid', colour = "grey80"),  
+    panel.grid.minor = element_blank(),  
+    legend.position = "none"  
+  )
+
+```
+<br> The bar chart shows the distribution of marital status in our dataset, we have 16,238 individuals are married (38.4%), 8,368 are divorced (19.8%), 4,142 are widowed (9.8%), 1,399 are separated (3.3%), 7,152 have never married (16.9%), and 2,252 are members of an unmarried couple (5.3%). The majority of individuals in the dataset are married, followed by those who are divorced and never married.
+
+
+
+```{r}
+# Plot the bar chart
+ggplot(filtered_data, aes(x = edu)) +
+  geom_bar(fill = "blue4") +
+  geom_text(stat = 'count', aes(label = ..count..), 
+            vjust = -0.5, size = 5, color = "black", fontface = "bold") +
+  labs(title = "Distribution of Education Status", x = "Education Level", y = "Count") +
+  ylim(0, max(table(filtered_data$edu)) * 1.1) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold", margin = margin(b = 10)),  
+    axis.title = element_text(size = 14),  
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1),  
+    axis.text.y = element_text(size = 12),  
+    panel.grid.major = element_line(size = 0.5, linetype = 'solid', colour = "grey80"),  
+    panel.grid.minor = element_blank(),  
+    legend.position = "none"  
+  )
+```
+<br> The bar chart shows the distribution of education status in the dataset we have 25,386 individuals have a college education or more (64.8%), 693 have an elementary education or less (1.8%), and 13,472 have a high school education or equivalent (33.4%). The majority of individuals in the dataset have a college education or higher.
+
+
+```{r}
+# Plot the bar chart
+ggplot(filtered_data, aes(x = employstatus)) +
+  geom_bar(fill = "blue4") +
+  geom_text(stat = 'count', aes(label = ..count..), 
+            vjust = -0.5, size = 4, color = "black", fontface = "bold") +
+  labs(title = "Distribution of Employment Status", x = "Employment Status", y = "Count") +
+  ylim(0, max(table(filtered_data$employstatus)) * 1.1) +  
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold", margin = margin(b = 10)),  
+    axis.title = element_text(size = 14),  
+    axis.text.x = element_text(size = 10, angle = 45, hjust = 1, vjust = 1),  
+    axis.text.y = element_text(size = 12),  
+    panel.grid.major = element_line(size = 0.5, linetype = 'solid', colour = "grey80"),  
+    panel.grid.minor = element_blank(),  
+    legend.position = "none"  
+  )
+```
+<br> The bar chart shows the distribution of employment status in the dataset as here we have 13,734 individuals are employed for wages (34.9%), 2,855 are self-employed (7.3%), 1,542 have been out of work for 1 year or more (3.9%), 1,236 have been out of work for less than 1 year (3.1%), 1,330 are homemakers (3.4%), 451 are students (1.1%), 10,888 are retired (27.6%), and 7,515 are unable to work (19.1%). The majority of individuals in the dataset are employed for wages, followed by those who are retired.
+
+
+```{r}
+# Plot the bar chart
+ggplot(filtered_data, aes(x = income_group)) +
+  geom_bar(fill = "blue4") +
+  geom_text(stat = 'count', aes(label = ..count..), 
+            vjust = -0.5, size = 4, color = "black", fontface = "bold") +
+  labs(title = "Distribution of Income Status", x = "Income Status", y = "Frequency") +
+  ylim(0, max(table(filtered_data$income_group)) * 1.1) +  
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold", margin = margin(b = 10)),  
+    axis.title = element_text(size = 14),  
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1),  
+    axis.text.y = element_text(size = 12),  
+    panel.grid.major = element_line(size = 0.5, linetype = 'solid', colour = "grey80"),  
+    panel.grid.minor = element_blank(),  
+    legend.position = "none"  
+  )
+```
+<br> The bar chart shows the distribution of income status in the dataset: 11,349 individuals have low income (29.0%), 17,526 have middle income (44.7%), and 10,676 have high income (27.2%). The majority of individuals in the dataset have middle income, followed by low income and high income.
+
+```{r}
+# Plot the pie chart with improved aesthetics
+ggplot(filtered_data, aes(x = "", fill = hrtdisease)) +
+  geom_bar(width = 1, stat = "count", color = "black") +
+  coord_polar("y") +
+  geom_text(stat = 'count', aes(label = paste0(round(..count.. / sum(..count..) * 100, 1), "%")), 
+            position = position_stack(vjust = 0.5), size = 5, color = "white", fontface = "bold") +
+  scale_fill_manual(values = c("Yes" = "red4", "No" = "blue4")) +
+  labs(title = "Distribution of Coronary Heart Disease (CHD) or Myocardial Infarction (MI)") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold", margin = margin(t = 20, b = 10)),  
+    axis.title = element_blank(),  
+    axis.text = element_blank(),  
+    axis.ticks = element_blank(),
+    panel.grid = element_blank(),  
+    legend.title = element_blank(),  
+    legend.position = "bottom"
+  )
+```
+<br> The pie chart shows the distribution of coronary heart disease (CHD) or myocardial infarction (MI) status in the dataset: 11.5% of individuals have CHD or MI, while 88.5% do not have these conditions. This indicates that the vast majority of individuals in the dataset do not have CHD or MI.
+
+
+```{r}
+# Plot the pie chart with improved aesthetics
+ggplot(filtered_data, aes(x = "", fill = factor(totinda))) +
+  geom_bar(width = 1, stat = "count", color = "black") +
+  coord_polar("y") +
+  geom_text(stat = 'count', aes(label = paste0(round(..count.. / sum(..count..) * 100, 1), "%")), 
+            position = position_stack(vjust = 0.5), size = 5, color = "white", fontface = "bold") +
+  scale_fill_manual(
+    values = c("1" = "blue4", "2" = "red4"), 
+    labels = c("1" = "Had physical activity or exercise", 
+               "2" = "No physical activity or exercise")
+  ) +
+  labs(title = "Distribution of Physical Activity or Exercise During the Past 30 Days") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold", margin = margin(t = 20, b = 10)),  
+    axis.title = element_blank(),  
+    axis.text = element_blank(),  
+    axis.ticks = element_blank(),
+    panel.grid = element_blank(),  
+    legend.title = element_blank(),  
+    legend.position = "bottom"
+  )
+```
+<br> The pie chart shows the distribution of physical activity or exercise during the past 30 days: 63.9% of individuals had physical activity or exercise, while 36.1% did not have any physical activity or exercise. This indicates that a majority of individuals in the dataset engaged in physical activity or exercise during the past month.
+
+```{r}
+# Plot the pie chart with improved aesthetics
+ggplot(filtered_data, aes(x = "", fill = factor(diabetic_status))) +
+  geom_bar(width = 1, stat = "count", color = "black") +
+  coord_polar("y") +
+  geom_text(stat = 'count', aes(label = paste0(round(..count.. / sum(..count..) * 100, 1), "%")), 
+            position = position_stack(vjust = 0.5), size = 5, color = "white", fontface = "bold") +
+  scale_fill_manual(
+    values = c("2" = "blue4", "1" = "red4"), 
+    labels = c("1" = "Yes", "2" = "No")
+  ) +
+  labs(title = "Distribution of Diabetes") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold", margin = margin(t = 20, b = 10)),  
+    axis.title = element_blank(),  
+    axis.text = element_blank(),  
+    axis.ticks = element_blank(),
+    panel.grid = element_blank(),  
+    legend.title = element_blank(),  
+    legend.position = "bottom"
+  )
+```
+<br> The pie chart shows the distribution of diabetes status in the dataset: 20.1% of individuals have diabetes, while 79.9% do not have diabetes. This indicates that a significant majority of individuals in the dataset do not have diabetes.
+
+
+```{r}
+# Plot the bar chart
+ggplot(filtered_data, aes(x = factor(genhlth, levels = 1:5, labels = c("Excellent", "Very good", "Good", "Fair", "Poor")))) +
+  geom_bar(fill = "blue4") +
+  geom_text(stat = 'count', aes(label = ..count..), vjust = -0.5, size = 4, color = "black", fontface = "bold") +
+  labs(title = "Distribution of General Health Status", x = "Health Status", y = "Frequency") +
+  ylim(0, max(table(filtered_data$genhlth)) * 1.1) +  
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold", margin = margin(b = 10)),  
+    axis.title = element_text(size = 14),  
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1),  
+    axis.text.y = element_text(size = 12),  
+    panel.grid.major = element_line(size = 0.5, linetype = 'solid', colour = "grey80"),  
+    panel.grid.minor = element_blank(),  
+    legend.position = "none"  
+  )
+```
+<br> The bar chart shows the distribution of general health status in the dataset: 1,927 individuals reported their health as excellent (4.9%), 7,924 as very good (20.1%), 12,899 as good (32.8%), 10,872 as fair (27.6%), and 5,929 as poor (15.1%). The most common health status reported is good, followed by fair.
+
+
+```{r}
+# Plot the bar chart
+ggplot(filtered_data, aes(x = factor(smokeday, levels = 1:3, labels = c("Every day", "Some days", "Not at all")))) +
+  geom_bar(fill = "blue4") +
+  geom_text(stat = 'count', aes(label = ..count..), vjust = -0.5, size = 4, color = "black", fontface = "bold") +
+  labs(title = "Distribution of Smoking Status", x = "Smoking Status", y = "Frequency") +
+  ylim(0, max(table(filtered_data$smokeday)) * 1.1) +  
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold", margin = margin(b = 10)),  
+    axis.title = element_text(size = 14),  
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1),  
+    axis.text.y = element_text(size = 12),  
+    panel.grid.major = element_line(size = 0.5, linetype = 'solid', colour = "grey80"),  
+    panel.grid.minor = element_blank(),  
+    legend.position = "none"  
+  )
+```
+<br> The bar chart shows the distribution of smoking status in the dataset: 10,408 individuals smoke every day (21.4%), 4,062 smoke on some days (8.3%), and 25,081 do not smoke at all (70.3%). The majority of individuals in the dataset do not smoke.
+
+
+
+## Obesity rate over the states
+
+In this part of the project, we wanted to include a map with the obesity rates for each respective state, so we understand the distribution of the obesity in the United States of America for creating a general view.
+
+```{r}
+# Summarize the obesity rate by state
+obesity_by_state <- filtered_data %>%
+  group_by(state) %>%
+  summarize(
+    total_individuals = n(),
+    obese_individuals = sum(obesity_status == "Obese"),
+    obesity_rate = mean(obesity_status == "Obese")
+  ) %>%
+  arrange(desc(obesity_rate))
+
+# Print the summarized obesity rates per state
+print(obesity_by_state)
+```
+
+```{r}
+# Load US map data
+us_map <- map_data("state")
+
+# Merge map data with obesity data
+us_map$region <- tolower(us_map$region)
+obesity_by_state$state <- tolower(obesity_by_state$state)
+map_data <- merge(us_map, obesity_by_state, by.x = "region", by.y = "state", all.x = TRUE)
+
+# Plot the map
+ggplot(map_data, aes(x = long, y = lat, group = group, fill = obesity_rate)) +
+  geom_polygon(color = "white", size = 0.2) +
+  scale_fill_continuous(name = "Obesity Rate", low = "lightblue2", high = "red4") +
+  coord_fixed(1.3) + # Maintain aspect ratio
+  theme_minimal() +
+  labs(
+    title = "Obesity Rates by State",
+    x = NULL,
+    y = NULL
+  ) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20, face = "bold"),
+    legend.position = "bottom",
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10),
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid = element_blank(),
+    panel.border = element_blank()
+  ) +
+  guides(fill = guide_colorbar(barwidth = 10, barheight = 1))
+```
+The map provided above shows the obesity rates by state in the United States and some other parts of
+countries bordered. It is represented with varying shades of red representing different levels of obesity rates.
+
+GENERAL TREND: Most states have high obesity rates, as indicated by the predominant dark red shading 
+across the map.
+
+States with the darkest red color have the highest obesity rates, close to 0.45.
+These states are mainly located in the South and parts of the Midwest. Specifically, North Dakota,
+Wisconsin and Iowa are the states with the highest rate of obesity. 
+
+
+# Contingency Tables
+Now, we will make some contingency tables. This type of tables show the distribution of individuals observed for the combinations of the categories of the 2 variables or more.
+
+## Joint Probability
+Let us start with The joint probability 
+```{r}
+# Joint Probability table for obesity_status and sex
+joint_prob_sex <- prop.table(table(filtered_data$obesity_status, filtered_data$sex))
+kable(joint_prob_sex, digits = 3, caption = "Joint Probability of Obesity Status and Sex") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+
+# Joint Probability table for obesity_status and age5cat
+joint_prob_age <- prop.table(table(filtered_data$obesity_status, filtered_data$age5cat))
+kable(joint_prob_age, digits = 3, caption = "Joint Probability of Obesity Status and Age Category") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+# Joint Probability table for obesity_status and income_group
+joint_prob_income <- prop.table(table(filtered_data$obesity_status, filtered_data$income_group))
+kable(joint_prob_income, digits = 3, caption = "Joint Probability of Obesity Status and Income Group") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+```
+
+In the **Joint Probability**, the probability is calculated of two events occurring simultaneously. It is calculated by dividing the count of occurrences of both events by the total number of observations.
+
+**Sex Differences in Obesity:**
+There seems to be a difference in obesity rates between males and females, with females having a higher probability of being obese. (0.225 > 0.175). These probabilities show associations, but they don't imply causation. For example, being female doesn't cause obesity, nor does being male prevent it. Other factors not included in this table could contribute to obesity rates. <br>
+
+**WE HAVE 5 categories of the age:**
+Generally, the probability of being obese tends to increase with age, with the highest probability among individuals aged 55 to 69 (0.142). Age 70 and older is low rate. <br>
+
+**MIDDLE INCOME has the highest obesity:**
+For the probability of being obese, the middle-income group has the highest probability (0.179), followed by the low-income group (0.120) and the high-income group (0.102). <br>
+
+
+## Conditional Probability
+```{r}
+# Conditional Probability of obesity_status given sex
+conditional_prob_obesity_sex <- prop.table(table(filtered_data$obesity_status, filtered_data$sex), 2)
+kable(conditional_prob_obesity_sex, digits = 3, caption = "Conditional Probability of Obesity Status given Sex") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+# Conditional Probability of obesity_status given age5cat
+conditional_prob_obesity_age <- prop.table(table(filtered_data$obesity_status, filtered_data$age5cat), 2)
+kable(conditional_prob_obesity_age, digits = 3, caption = "Conditional Probability of Obesity Status given Age Category") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+# Conditional Probability of obesity_status given income_group
+conditional_prob_obesity_income <- prop.table(table(filtered_data$obesity_status, filtered_data$income_group), 2)
+kable(conditional_prob_obesity_income, digits = 3, caption = "Conditional Probability of Obesity Status given Income Group") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+```
+
+In here we wanted to see the probability of being obese occurring given that another event has already occurred which is **Conditional Probability**. It is calculated by dividing the joint probability of the two events by the probability of the conditioning event. <br>
+
+**Sex Differences in Obesity:**
+The joint probabilities indicated that females have a higher probability of being obese (42.3%) compared to males (37.4%). <br>
+
+**Age Differences in Obesity:**
+The conditional probabilities show an increasing trend of obesity with age, peaking at 44.9% for the 40 to 54 age group, and then decreasing to 33.5% for those aged 70 and older. <br>
+
+**Income Group Differences in Obesity:**
+The conditional probabilities reveal that the low-income group has the highest probability of being obese (41.8%), followed by the middle-income group (40.4%), and the high-income group (37.6%). <br>
+
+
+# The Models
+
+## LOGISTIC REGRESSION
+
+The first model will be about the logistic model.
+Y is a binary outcome, in this case we are interested in the obesity status (obesity_status column name), to predict and classify the individual in which status he, or she is part, regarding some other variables.
+
+I want to make an ungrouped data form.
+
+```{r}
+#head(filtered_data)
+# Select the desired columns and create a new data frame
+ungrouped <- filtered_data %>%
+  select(age5cat,income_group, edu, sex, obesity_status)
+head(ungrouped)
+```
+
+The first model is the logistic regression and the age.
+
+```{r}
+m1 = glm(obesity_status~age5cat, data = ungrouped, family = "binomial")
+summary(m1)
+```
+**THE INTERPRETATION OF THE RESULT:**
+
+1.  -0.84243 --> This is the log-odds of being obese for the reference age group (the baseline category, which is not explicitly shown but usually the youngest age group, "Age 18 to 29").
+2.  the log-odds of being obese for individuals aged 30 to 39 compared to the reference age group increases by 0.40789.
+Pr(>|z|): 3.14e-16 (highly significant, p < 0.001)
+The coefficients for age categories show that age significantly affects the log-odds of obesity.
+Individuals in the age groups 30-39, 40-54, 55-69, and 70+ all have higher log-odds of being obese compared to the reference group (likely 18-29 years old).
+
+In conclusion, the model suggests that as age increases (up to a certain point), the likelihood of obesity also increases, but the effect is less pronounced for those aged 70 and older.
+
+
+**This will bring the same result as above.**
+
+```{r}
+summ(m1, model.info = F, model.fit = F,confint = T)
+```
+```{r}
+
+#Positive effect of the age
+
+#Prediction
+#Log-odds
+predict(m1, data.frame(age5cat= "Age 30 to 39"))
+
+#probability
+predict(m1, data.frame(age5cat= "Age 30 to 39"), type = "response")
+```
+By default, the predict function for a logistic regression model returns the prediction in terms of log-odds (also known as the linear predictor). Log-odds is the logarithm of the odds of the event happening (e.g., the probability of success divided by the probability of failure).
+This means the log-odds of being obese for someone aged 30 to 39 is -0.4345356 
+This means the probability of being obese for someone aged 30 to 39 is approximately 39.30%.
+
+
+
+**Let us see some other graphs:**
+
+```{r}
+# Create a new data frame with age categories for prediction
+new_data <- data.frame(age5cat = levels(ungrouped$age5cat))
+
+# Predict probabilities using the model
+new_data$predicted_prob <- predict(m1, newdata = new_data, type = "response")
+```
+
+This code will create a bar plot showing the predicted probability of obesity for each age category.
+```{r}
+# Plot the predicted probabilities
+ggplot(new_data, aes(x = age5cat, y = predicted_prob)) +
+  geom_bar(stat = "identity", fill = "blue4") +
+  labs(title = "Predicted Probability of Obesity by Age Category",
+       x = "Age Category",
+       y = "Predicted Probability") +
+  theme_minimal()
+
+```
+
+**1. Fit the logistic regression model considering all the variables:**
+```{r}
+m_obesity <- glm(obesity_status ~ genhlth + poorhlth + hrtdisease + diabetic + marital + edu + employstatus + income, 
+                 data = filtered_data, family = "binomial")
+summary(m_obesity)
+```
+**2. Create a data frame for predictions:**
+```{r}
+#Create a new data frame for prediction
+new_data <- data.frame(genhlth = levels(filtered_data$genhlth),
+                       poorhlth = rep(levels(filtered_data$poorhlth)[1], length(levels(filtered_data$genhlth))),
+                       hrtdisease = rep(levels(filtered_data$hrtdisease)[1], length(levels(filtered_data$genhlth))),
+                       diabetic = rep(levels(filtered_data$diabetic)[1], length(levels(filtered_data$genhlth))),
+                       marital = rep(levels(filtered_data$marital)[1], length(levels(filtered_data$genhlth))),
+                       edu = rep(levels(filtered_data$edu)[1], length(levels(filtered_data$genhlth))),
+                       employstatus = rep(levels(filtered_data$employstatus)[1], length(levels(filtered_data$genhlth))),
+                       income = rep(levels(filtered_data$income)[1], length(levels(filtered_data$genhlth))))
+
+# Predict probabilities using the model
+new_data$predicted_prob <- predict(m_obesity, newdata = new_data, type = "response")
+```
+
+**3. Plot the predicted probabilities:**
+
+```{r}
+# Plot the predicted probabilities
+ggplot(new_data, aes(x = genhlth, y = predicted_prob)) +
+  geom_bar(stat = "identity", fill = "blue4") +
+  labs(title = "Predicted Probability of Obesity by General Health Status",
+       x = "General Health",
+       y = "Predicted Probability of Obesity") +
+  theme_minimal()
+```
+This script fits a logistic regression model to predict obesity status using multiple predictors.
+The plot shows the predicted probability of obesity for each level of general health (genhlth), assuming other factors are held constant, we could try it also with other predictors.
+
+
+
+
+Let us see the relation with sex (male or female) and income group (low income, middle income ,high income).
+
+```{r}
+# Logistic regression model controlling for sex and income_group
+logistic_model <- glm(obesity_status ~ sex + income_group, data = filtered_data, family = binomial)
+summary(logistic_model)
+```
+**THE interpretation of the logistic regression model:**
+
+The positive value indicates that being female is associated with higher log-odds of being obese compared to being male.
+The p-value (< 2e-16) indicates this effect is statistically significant.
+
+WE CAN COMPARE DIRECTLY SOME MODELS USING AIC:
+
+We can compare model 1 (just age) and the second model, all the predictors.
+
+
+```{r}
+#compare the 2 models by AIC
+data.frame(model = c("age5cat", "obesity_all"),
+           AIC = c(m1$aic, m_obesity$aic))
+           
+
+
+#and by likelihood ratio test
+anova(m1,m_obesity,test = "LRT")
+
+```
+With all the predictors, of course (by logic), ANOVA is lower, 
+and as a result is it a more significant model.
+
+What does anova mean in our case?
+The significant p-value (less than 2.2e-16) suggests that Model 2, which includes the additional predictors (genhlth, poorhlth, hrtdisease, diabetic, marital, edu, employstatus, and income), provides a significantly better fit to the data than Model 1, which only includes age5cat as a predictor.
+
+BETTER A SIMPLER MODEL OR A MORE COMPLEX ONE?
+Including the additional predictors in Model 2 significantly improves the model's ability to predict obesity_status compared to using age5cat alone. The analysis demonstrates that the more complex model is a better fit for the data.
+
+
+## Multinomial Logistic Regression
+
+Using a multinomial logistic regression model is ideal in our research on obesity because it effectively handles the categorical nature of the BMI variable with four distinct levels (Underweight, Normal Weight, Overweight, Obese). This model extends beyond binary logistic regression to compare the likelihood of being in each BMI category relative to a reference group (Obese), allowing for a comprehensive analysis of how various predictors affect the distribution across these categories. It provides clear and interpretable coefficients that describe the relationship between these predictors and the likelihood of being in each BMI category.
+
+```{r}
+# Fit a multinomial logistic regression model
+multinom_model <- vglm(bmi ~ hrtdisease + diabetic_status + age5cat + sex + edu + income_group + totinda + smokeday + genhlth, family = multinomial(refLevel = 4), data = filtered_data)
+
+# Summary of the multinomial logistic regression model
+summary(multinom_model)
+
+```
+
+**Intercepts:**
+They correspond to the log odds of being in each category compared to the reference category (obese) when all predictors are set to zero. The intercept for "Underweight" is -2.4048836, indicating a lower likelihood of being underweight compared to obese in the baseline scenario. The intercept for "Normal Weight" is 0.3469836, suggesting a higher baseline likelihood of being normal weight compared to obese. The intercept for "Overweight" is 0.1628343, indicating a slightly higher baseline likelihood of being overweight compared to obese. 
+
+
+**Heart Disease (hrtdisease):**
+
+Not having heart disease significantly increases the likelihood of being Normal Weight (Estimate = 0.244, Pr(>|z|) < 0.001) and Overweight (Estimate = 0.084, Pr(>|z|) < 0.05) compared to being Obese, indicating that heart disease is associated with higher BMI.
+
+**Diabetic Status (diabetic_status):**
+Having diabetes significantly increases the odds of being Underweight (Estimate = 1.736, Pr(>|z|) < 0.001), Normal Weight (Estimate = 1.242, Pr(>|z|) < 0.001), and Overweight (Estimate = 0.614, Pr(>|z|) < 0.001) compared to being Obese, showing a strong link between diabetes and lower BMI categories.
+
+**Age (age5cat):**
+Individuals aged 30 to 69 are less likely to be Underweight or Normal Weight compared to being Obese, while those aged 55 to 69 are more likely to be Overweight (Estimate = 0.300, Pr(>|z|) < 0.001). Those aged 70 and older are more likely to be Normal Weight (Estimate = 0.322, Pr(>|z|) < 0.001) and Overweight (Estimate = 0.788, Pr(>|z|) < 0.001).
+
+**Sex (sex):**
+Females are more likely to be Underweight (Estimate = 0.323, Pr(>|z|) < 0.001) and less likely to be Overweight (Estimate = -0.365, Pr(>|z|) < 0.001) compared to being Obese, indicating gender differences in BMI categories.
+
+**Education (edu):**
+Lower education levels, such as elementary or less, significantly increase the odds of being Underweight (Estimate = 0.657, Pr(>|z|) < 0.001), and high school education also increases the odds of being Underweight (Estimate = 0.241, Pr(>|z|) < 0.01) compared to being Obese.
+
+**Income Group (income_group):**
+Middle and high-income individuals are less likely to be Underweight (Middle: Estimate = -0.369, Pr(>|z|) < 0.001; High: Estimate = -0.605, Pr(>|z|) < 0.001) or Normal Weight (Middle: Estimate = -0.181, Pr(>|z|) < 0.001; High: Estimate = -0.253, Pr(>|z|) < 0.001) compared to being Obese.
+
+**Total Physical Activity (totinda):**
+Higher physical activity significantly decreases the likelihood of being Underweight (Estimate = -0.169, Pr(>|z|) < 0.05), Normal Weight (Estimate = -0.493, Pr(>|z|) < 0.001), and Overweight (Estimate = -0.373, Pr(>|z|) < 0.001) compared to being Obese.
+
+**Smoking Status (smokeday):**
+Smoking some days decreases the odds of being Overweight (Estimate = -0.314, Pr(>|z|) < 0.001) compared to being Obese, suggesting occasional smoking is linked to lower BMI categories.
+
+**General Health (genhlth):**
+Better general health decreases the odds of being in lower BMI categories compared to being Obese. Good health decreases the odds of being Normal Weight (Estimate = -0.563, Pr(>|z|) < 0.001), while very good and excellent health decreases the odds of being Overweight (Very Good: Estimate = -0.728, Pr(>|z|) < 0.001; Excellent: Estimate = -0.927, Pr(>|z|) < 0.001). Poor health also decreases the odds of being Normal Weight (Estimate = -0.980, Pr(>|z|) < 0.001) and Overweight (Estimate = -0.870, Pr(>|z|) < 0.001).
+
+```{r}
+# Extract coefficients and standard errors from the multinomial model
+coef_multinom <- coef(multinom_model)
+std_err <- sqrt(diag(vcov(multinom_model)))
+
+# Define predictor names (if not already included in the row names of coef_multinom)
+predictor_names <- c("(Intercept)", "Heart Disease", "Diabetes Status", "Age 30 to 39", "Age 40 to 54", 
+                     "Age 55 to 69", "Age 70 and older", "Sex", "Elementary Education", "High School Education", 
+                     "Middle Income", "High Income", "Physical Activity", "Smokeday2", "Smokeday3", 
+                     "General Health 2", "General Health 3", "General Health 4", "General Health 5")
+
+# Reshape coefficients and standard errors into data frames
+coef_df <- as.data.frame(matrix(coef_multinom, ncol = 3, byrow = TRUE))
+std_err_df <- as.data.frame(matrix(std_err, ncol = 3, byrow = TRUE))
+colnames(coef_df) <- colnames(std_err_df) <- c("Underweight", "Normal Weight", "Overweight")
+rownames(coef_df) <- rownames(std_err_df) <- predictor_names
+
+# Calculate odds ratios and confidence intervals, adding predictor names
+odds_ratios <- exp(coef_df)
+conf_int_lower <- exp(coef_df - 1.96 * std_err_df)
+conf_int_upper <- exp(coef_df + 1.96 * std_err_df)
+odds_ratios$Predictor <- conf_int_lower$Predictor <- conf_int_upper$Predictor <- predictor_names
+
+# Melt data frames for plotting
+odds_ratios_long <- melt(odds_ratios, id.vars = "Predictor", variable.name = "BMI_Category", value.name = "Odds_Ratio")
+conf_int_lower_long <- melt(conf_int_lower, id.vars = "Predictor", variable.name = "BMI_Category", value.name = "CI_Lower")
+conf_int_upper_long <- melt(conf_int_upper, id.vars = "Predictor", variable.name = "BMI_Category", value.name = "CI_Upper")
+
+# Merge data frames
+conf_int_df <- Reduce(function(x, y) merge(x, y, by = c("Predictor", "BMI_Category")), 
+                      list(odds_ratios_long, conf_int_lower_long, conf_int_upper_long))
+
+# Function to create individual plots for each BMI category with linear x-axis scaling
+create_forest_plot <- function(df, category, color) {
+  ggplot(df[df$BMI_Category == category, ], aes(x = Odds_Ratio, y = Predictor)) +
+    geom_point(size = 2, color = color) +
+    geom_errorbarh(aes(xmin = CI_Lower, xmax = CI_Upper), height = 0.2, color = color) +
+    theme_minimal() +
+    labs(title = paste("Forest Plot of Odds Ratios with Confidence Intervals\n", category), 
+         x = "Odds Ratio", y = "Predictor") +
+    scale_x_continuous(breaks = seq(0, 4, by = 0.5)) +  # Adjust breaks as needed
+    coord_cartesian(xlim = c(0, 4)) +  # Set x-axis limits for uniform spacing
+    theme(axis.text.y = element_text(size = 10, angle = 0, hjust = 1), legend.position = "none")
+}
+
+# Create and display individual plots with different colors
+categories_colors <- list("Underweight" = "red", "Normal Weight" = "darkgreen", "Overweight" = "blue")
+plots <- lapply(names(categories_colors), function(cat) {
+  create_forest_plot(conf_int_df, cat, categories_colors[[cat]])
+})
+
+# Print plots
+print(plots[[1]])
+print(plots[[2]])
+print(plots[[3]])
+
+
+
+```
+<br> **Underweight:**
+Smokeday3: Higher odds of being underweight, indicating a strong association between smoking status and underweight.
+General Health 4 and 5: Lower odds of being underweight, suggesting that better general health is associated with being underweight.
+Elementary Education: Significantly lower odds of being underweight, indicating that lower education levels might be associated with higher BMI.
+Age Categories: Older age groups, particularly those aged 55 to 69 and 70 and older, have lower odds of being underweight. This might be due to metabolic changes or lifestyle factors associated with aging.
+Intercept: The odds ratios for many predictors are significantly less than 1, indicating a strong association with not being underweight. <br>
+
+**Normal Weight:**
+Physical Activity: Higher odds of maintaining normal weight, highlighting the importance of physical activity in weight management.
+Income: Middle and high-income groups show higher odds of maintaining normal weight, reflecting the influence of socioeconomic status on maintaining a healthy weight.
+Education: High school education correlates with higher odds of being of normal weight, suggesting that higher education levels may contribute to better weight management.
+General Health: Better general health is associated with maintaining normal weight.
+Age Categories: Younger age groups have higher odds of being normal weight, with the odds decreasing as age increases, indicating that younger individuals are more likely to maintain a normal weight. <br>
+
+**Overweight:**
+Sex: Being male is associated with higher odds of being overweight, which might be due to differences in body composition and lifestyle factors between genders.
+Income: Middle-income group shows higher odds of being overweight, while high-income group shows a decrease, suggesting that middle-income individuals might be at higher risk of being overweight.
+General Health: Worse general health (categories 3, 4, and 5) is associated with higher odds of being overweight, indicating that poor health is linked with higher BMI.
+Heart Disease and Diabetes: Both conditions are strongly associated with higher odds of being overweight, reflecting the link between these chronic conditions and higher body weight.
+Age Categories: Middle-aged groups (40 to 54, 55 to 69) show higher odds of being overweight, possibly due to lifestyle and metabolic changes during middle age. <br>
+
+
+
+
+
+## Ordinal Logistic Regression
+
+The ordinal logistic regression model is well-suited for our research because it appropriately handles the ordinal nature of your BMI variable, which includes four ordered categories: Underweight, Normal Weight, Overweight, and Obese. This model builds on your previous analyses with logistic and multinomial regression and adds the ability to interpret the impact of predictors on the likelihood of being in higher versus lower BMI categories. The model's ability to respect the inherent order in the data and provide clear, interpretable odds ratios for ordered outcomes makes it an ideal choice for understanding the factors influencing different levels of BMI
+
+**Model 1: Basic Model**
+Includes basic demographic variables: age, sex, marital status, and education. Provides a foundational understanding of how these basic demographics relate to BMI categories.
+
+\begin{equation}
+\text{Model 1:} \quad \text{BMI} \sim \text{age5cat} + \text{sex} + \text{marital} + \text{edu}
+\end{equation}
+
+**Model 2: Extended Model with Health Variables**
+Builds on Model 1 by adding health-related variables: general health, heart disease, diabetic status, and smoking status. Which aims to provide a more comprehensive understanding by including variables that are directly related to health and potentially influence BMI.
+
+\begin{equation}
+\text{Model 2:} \quad \text{BMI} \sim \text{age5cat} + \text{sex} + \text{marital} + \text{edu} + \text{genhlth} + \text{hrtdisease} + \text{diabetic\_status} + \text{smokeday}
+\end{equation}
+
+**Model 3: Comprehensive Model with Socioeconomic Variables**
+Expands on Model 2 by including socioeconomic variables: income group and employment status.This model provides the most detailed analysis by considering a wide range of factors that could influence BMI, including demographic, health, and socioeconomic variables.
+
+\begin{equation}
+\text{Model 3:} \quad \text{BMI} \sim \text{age5cat} + \text{sex} + \text{marital} + \text{edu} + \text{genhlth} + \text{hrtdisease} + \text{diabetic\_status} + \text{smokeday} + \text{income\_group} + \text{employstatus}
+\end{equation}
+
+```{r}
+# Fit Model 1 (Age, Gender, Marital, Education)
+fit1 <- vglm(bmi ~ age5cat + sex + marital + edu, family = cumulative(parallel = TRUE), data = filtered_data)
+
+# Fit Model 2 (Add health variables)
+fit2 <- vglm(bmi ~ age5cat + sex + marital + edu + genhlth + hrtdisease + diabetic_status + smokeday, family = cumulative(parallel = TRUE), data = filtered_data)
+
+# Fit Model 3 (Add Employment Status and income)
+fit3 <- vglm(bmi ~ age5cat + sex + marital + edu + genhlth + hrtdisease + diabetic_status + smokeday + income_group + employstatus, family = cumulative(parallel = TRUE), data = filtered_data)
+
+# Calculate AIC and BIC for all three models
+aic_fit1 <- AIC(fit1)
+aic_fit2 <- AIC(fit2)
+aic_fit3 <- AIC(fit3)
+
+bic_fit1 <- BIC(fit1)
+bic_fit2 <- BIC(fit2)
+bic_fit3 <- BIC(fit3)
+
+# Print AIC and BIC values for comparison
+cat("Model 1 AIC:", aic_fit1, "\n")
+cat("Model 2 AIC:", aic_fit2, "\n")
+cat("Model 3 AIC:", aic_fit3, "\n")
+
+cat("Model 1 BIC:", bic_fit1, "\n")
+cat("Model 2 BIC:", bic_fit2, "\n")
+cat("Model 3 BIC:", bic_fit3, "\n")
+
+# Determine the best model based on AIC and BIC
+if (aic_fit1 < aic_fit2 && aic_fit1 < aic_fit3 && bic_fit1 < bic_fit2 && bic_fit1 < bic_fit3) {
+    cat("Model 1 is better based on AIC and BIC.\n")
+    summary(fit1)
+} else if (aic_fit2 < aic_fit1 && aic_fit2 < aic_fit3 && bic_fit2 < bic_fit1 && bic_fit2 < bic_fit3) {
+    cat("Model 2 is better based on AIC and BIC.\n")
+    summary(fit2)
+} else {
+    cat("Model 3 is better based on AIC and BIC.\n")
+    summary(fit3)
+}
+```
+
+
+**Model 3 was chosen**
+Model 3 was chosen because it provided the best fit among the three models tested, as evidenced by the **lowest Akaike Information Criterion (AIC) and Bayesian Information Criterion (BIC) values**. The AIC and BIC are used to compare models by considering both the goodness of fit and the complexity of the model. Lower values indicate a better model. Model 3's inclusion of both health and socioeconomic variables in addition to the basic demographic variables allows for a **more comprehensive understanding of the factors influencing BMI**. This broader scope captures a wider array of influences on BMI, leading to more accurate and reliable predictions and providing a detailed, multifaceted view of the determinants of obesity. <br>
+
+
+**Age (age5cat):**
+Being aged 30 to 39 (Estimate = -0.461, Pr(>|z|) < 2e-16), 40 to 54 (Estimate = -0.594, Pr(>|z|) < 2e-16), and 55 to 69 (Estimate = -0.368, Pr(>|z|) < 5.11e-16) significantly decreases the odds of being in a higher BMI category compared to being Obese. This reflects a trend where older individuals up to age 69 are less likely to be in higher BMI categories, suggesting that age is inversely related to obesity within these age ranges.
+
+**Sex (sex):**
+Being female (Estimate = -0.040, Pr(>|z|) = 0.043) slightly decreases the odds of being in a higher BMI category compared to being Obese. This indicates a small but significant gender difference, with females being less likely to be in higher BMI categories than males.
+
+**Marital Status (marital):**
+Being divorced (Estimate = 0.122, Pr(>|z|) = 7.80e-06), widowed (Estimate = 0.161, Pr(>|z|) = 4.15e-06), separated (Estimate = 0.125, Pr(>|z|) = 0.020), never married (Estimate = 0.187, Pr(>|z|) = 5.21e-10), or a member of an unmarried couple (Estimate = 0.200, Pr(>|z|) = 4.46e-06) increases the odds of being in a higher BMI category compared to being Obese. This suggests that marital status is a significant factor, with those not currently married being more likely to be in higher BMI categories.
+
+**Education (edu):**
+Education levels were not significant predictors of BMI categories. Individuals with elementary or less education (Estimate = -0.021, Pr(>|z|) = 0.778) and high school or equivalent education (Estimate = -0.016, Pr(>|z|) = 0.449) showed no significant difference in the odds of being in higher BMI categories compared to being Obese.
+
+**General Health (genhlth):**
+Good (Estimate = -0.360, Pr(>|z|) = 1.98e-14), very good (Estimate = -0.854, Pr(>|z|) < 2e-16), and excellent health (Estimate = -0.941, Pr(>|z|) < 2e-16) significantly decrease the odds of being in a higher BMI category compared to being Obese. Poor health (Estimate = -0.710, Pr(>|z|) < 2e-16) also decreases the odds, indicating that better general health is strongly associated with lower BMI categories.
+
+**Heart Disease (hrtdisease):**
+Not having heart disease (Estimate = 0.152, Pr(>|z|) = 2.08e-06) significantly increases the odds of being in a higher BMI category compared to being Obese. This suggests that individuals without heart disease are more likely to be in higher BMI categories.
+
+**Diabetic Status (diabetic_status):**
+Having diabetes (Estimate = 0.931, Pr(>|z|) < 2e-16) significantly increases the odds of being in a higher BMI category compared to being Obese. This indicates a strong association between diabetes and higher BMI categories, reflecting the link between diabetes and obesity.
+
+**Smoking Status (smokeday)**
+Smoking every day (Estimate = -0.404, Pr(>|z|) < 2e-16) significantly decreases the odds of being in a higher BMI category compared to being Obese. However, smoking some days (Estimate = 0.042, Pr(>|z|) = 0.227) was not a significant predictor, suggesting that daily smoking is associated with lower BMI categories.
+
+**Income Group (income_group):**
+Being in the middle-income group (Estimate = -0.083, Pr(>|z|) = 0.001) significantly decreases the odds of being in a higher BMI category compared to being Obese. High income was not significant (Estimate = -0.045, Pr(>|z|) = 0.166), indicating that middle-income individuals are less likely to be in higher BMI categories.
+
+**Employment Status (employstatus):**
+Being self-employed (Estimate = 0.368, Pr(>|z|) < 2e-16), out of work for 1 year or more (Estimate = 0.258, Pr(>|z|) = 7.75e-07), out of work for less than 1 year (Estimate = 0.136, Pr(>|z|) = 0.016), a homemaker (Estimate = 0.221, Pr(>|z|) = 6.03e-05), a student (Estimate = 0.316, Pr(>|z|) = 0.000464), or retired (Estimate = 0.203, Pr(>|z|) = 2.48e-09) significantly increases the odds of being in a higher BMI category compared to being Obese. This suggests that employment status is a significant factor in BMI categorization.
+
+
+```{r}
+# Extract coefficients
+coef_values <- coef(fit3)
+intercepts <- coef_values[grepl("Intercept", names(coef_values))]
+betas <- coef_values[!grepl("Intercept", names(coef_values))]
+beta_names <- names(betas)
+
+# Create a data frame for plotting betas with different intercepts
+plot_data <- data.frame(
+  Coefficient = rep(beta_names, 3),
+  Estimate = rep(betas, 3),
+  Category = rep(c("Underweight", "Normal_weight", "Overweight"), each = length(betas)),
+  Intercept = rep(intercepts, each = length(betas))
+)
+
+# Calculate the y-values for the lines with different intercepts
+plot_data$Fitted_Value <- plot_data$Estimate + plot_data$Intercept
+
+# Plot
+ggplot(plot_data, aes(x = Coefficient, y = Fitted_Value, color = Category, group = Category)) +
+  geom_point(size = 3) +
+  geom_line() +
+  labs(title = "Betas for BMI Categories with Different Intercepts",
+       x = "Predictor",
+       y = "Fitted Value") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+
+The plot shows the fitted values of predictors for different BMI categories (Underweight, Normal Weight, Overweight) in an ordinal logistic regression model. Each line represents a BMI category and starts at a different **intercept: -3.69759 for Underweight, -0.72634 for Normal Weight, and 0.71596 for Overweight.** These intercepts shift the baseline log odds for each category. The roughly **parallel lines indicate the proportional odds assumption holds**, meaning the predictor effects are consistent across categories. The vertical distances between the lines reflect the differences in baseline odds for each BMI category, with larger distances indicating greater differences in the likelihood of being in each category relative to the baseline (Obese).
+
+
+## Model Generalized Linear Mixed Model (GLMM)
+
+The model is a Generalized Linear Mixed Model (GLMM) with a by (logit link function) for the response variable obesity_status. The formula for the model is:binomial family
+
+### Testing for correlation between model variables
+
+    All predictors have VIF values well below 5, indicating no significant multicollinearity issues.
+    The highest VIF is for employstatus with a value of 3.396019, but it is still within acceptable limits.
+
+```{r}
+# Define predictors without bmi5
+predictors <- c("age5cat", "genhlth", "hrtdisease", "diabetic", "marital", 
+                "edu", "employstatus", "income_group", "smokeday", "totinda", "sex")
+
+# Select relevant columns from the data
+vif_data <- filtered_data %>% select(all_of(predictors))
+
+# Calculate VIF
+vif_results <- vif(lm(as.formula(paste("bmi5 ~", paste(predictors, collapse = " + "))), data = filtered_data))
+
+# Print VIF results
+print(vif_results)
+
+```
+
+Here, obesity_status is the dependent variable, and all other variables are fixed effects. The random effect (1 | state) allows the intercept to vary by state.
+
+
+ Model Summary
+
+The model summary provides information about the fixed effects and the random effects.
+
+    Fixed Effects: These coefficients estimate the effect of each predictor variable on the log-odds of the dependent variable (obesity_status).
+        Significant Predictors: Variables like age5cat, genhlth, hrtdisease, diabetic, marital, edu, employstatus, income_group, smokeday, totinda, and sex show significant coefficients 
+        Intercept: The intercept term represents the log-odds of the outcome when all predictors are set to their reference categories or zero.
+        Random Effects: These reflect the variation across groups (states in your case).
+        State Variance: The variance of the intercept for state is 0.01574, indicating some variability in obesity_status across states.
+
+first thing first Fit the Model: Ensure the model is correctly fitted with the state as a random effect.
+Marginal Effects
+
+Random Effects
+
+    State (Intercept):
+        Variance: 0.01574
+        Standard Deviation: 0.1255
+
+Fixed Effects Interpretation
+
+The fixed effects part of the model estimates the impact of each predictor on the log-odds of obesity status. Here’s a detailed interpretation of the significant predictors:
+Age Categories (age5cat)
+
+    Age 30 to 39: Significantly higher odds of obesity compared to Age 18 to 29 (Estimate: 0.33101, p < 0.001).
+    Age 40 to 54: Even higher odds compared to Age 18 to 29 (Estimate: 0.34231, p < 0.001).
+    Age 55 to 69: No significant difference compared to Age 18 to 29 (Estimate: 0.06748, p = 0.212).
+    Age 70 and older: Significantly lower odds compared to Age 18 to 29 (Estimate: -0.43679, p < 0.001).
+
+Conclusion: Middle-aged adults (30-54 years) have the highest odds of obesity, while the youngest (18-29 years) and oldest (70+ years) groups have the lowest odds.
+General Health (genhlth)
+
+    Very good (2): Higher odds of obesity compared to Excellent (1) (Estimate: 0.38120, p < 0.001).
+    Good (3): Much higher odds compared to Excellent (1) (Estimate: 0.94352, p < 0.001).
+    Fair (4): Extremely higher odds compared to Excellent (1) (Estimate: 1.05963, p < 0.001).
+    Poor (5): Very high odds compared to Excellent (1) (Estimate: 0.85074, p < 0.001).
+
+Conclusion: Poorer general health status is strongly associated with higher odds of obesity.
+Heart Disease (hrtdisease)
+
+    Yes (1): Higher odds of obesity compared to No (2) (Estimate: 0.12832, p < 0.001).
+
+Conclusion: Individuals with heart disease have higher odds of being obese compared to those without heart disease.
+Diabetes (diabetic)
+
+    Yes, but not currently treated (1): Significantly higher odds of obesity compared to No (3) (Estimate: 0.95625, p < 0.001).
+    Yes, currently treated (2): Higher odds compared to No (3) (Estimate: 0.33710, p = 0.0017).
+    Yes, with complications (4): Significantly higher odds compared to No (3) (Estimate: 0.82150, p < 0.001).
+
+Conclusion: Diabetic status, especially untreated or with complications, is significantly associated with higher odds of obesity.
+Marital Status (marital)
+
+    Widowed (2): Lower odds of obesity compared to Married (1) (Estimate: -0.10753, p < 0.001).
+    Divorced (3): Even lower odds compared to Married (1) (Estimate: -0.16043, p < 0.001).
+    Separated (4): No significant difference compared to Married (1) (Estimate: -0.09936, p = 0.103).
+    Never married (5): Lower odds compared to Married (1) (Estimate: -0.11819, p < 0.001).
+    Living with partner (6): Lower odds compared to Married (1) (Estimate: -0.17017, p < 0.001).
+
+Conclusion: Being married is associated with higher odds of obesity compared to other marital statuses.
+Education Level (edu)
+
+    Elementary or less: No significant difference compared to College or more (Estimate: 0.05921, p = 0.478).
+    High school or equivalent: No significant difference compared to College or more (Estimate: -0.01718, p = 0.480).
+
+Conclusion: Education level does not have a significant impact on obesity when compared to having a college education or more.
+Employment Status (employstatus)
+
+    Unemployed (2): Significantly lower odds of obesity compared to Employed (1) (Estimate: -0.39150, p < 0.001).
+    Retired (3): Lower odds compared to Employed (1) (Estimate: -0.28383, p < 0.001).
+    Unable to work (4): Lower odds compared to Employed (1) (Estimate: -0.15740, p = 0.015).
+    Homemaker (5): Lower odds compared to Employed (1) (Estimate: -0.16931, p = 0.007).
+    Student (6): No significant difference compared to Employed (1) (Estimate: -0.19341, p = 0.073).
+    Other (7): Significantly lower odds compared to Employed (1) (Estimate: -0.21871, p < 0.001).
+    Self-employed (8): Lower odds compared to Employed (1) (Estimate: -0.07926, p = 0.036).
+
+Conclusion: Employment status significantly impacts obesity, with employed individuals having higher odds of obesity compared to other employment statuses.
+Income Group (income_group)
+
+    Low Income: Lower odds of obesity compared to Middle Income (Estimate: -0.05860, p = 0.046).
+    High Income: Marginally lower odds compared to Middle Income (Estimate: -0.05504, p = 0.059).
+
+Conclusion: Middle-income individuals have slightly higher odds of obesity compared to low and high-income groups.
+Smoking Status (smokeday)
+
+    Never smoked (1): Significantly lower odds of obesity compared to Daily smoker (3) (Estimate: -0.43408, p < 0.001).
+    Occasionally smokes (2): Even lower odds compared to Daily smoker (3) (Estimate: -0.47116, p < 0.001).
+
+Conclusion: Daily smokers have significantly higher odds of obesity compared to never smokers and occasional smokers.
+Total Physical Activity (totinda)
+
+    High (2): Significantly higher odds of obesity compared to Low (1) (Estimate: 0.40327, p < 0.001).
+
+Conclusion: Higher physical activity levels are associated with higher odds of obesity, suggesting a complex relationship.
+Sex (sex)
+
+    female (2): Higher odds of obesity compared to male  (1) (Estimate: 0.20345, p < 0.001).
+
+```{r}
+
+# Define the predictors
+predictors <- c("age5cat", "genhlth", "hrtdisease", "diabetic", "marital", "edu", "employstatus", "income_group", "smokeday", "totinda", "sex")
+
+# Function to fit the model with state as the random effect
+fit_model_with_random_effect <- function() {
+  # Create the formula string
+  formula_str <- paste("obesity_status ~", paste(predictors, collapse = " + "), "+ (1 | state)")
+  formula <- as.formula(formula_str)
+  
+  model <- glmmTMB(formula, data = filtered_data, family = binomial(link = "logit"))
+  print(summary(model))
+  return(model)
+}
+
+# Fit the model with "state" as the random effect
+model1 <- fit_model_with_random_effect()
+
+
+```
+### Calculate Marginal Effects: Use appropriate functions to calculate the marginal effects, conditioning on the random effects of the state.
+Interpretation of Marginal Effects
+
+Here are the highlights and detailed interpretations of the marginal effects for each predictor, based on the specified reference levels:
+Age Categories (age5cat)
+
+    Age 18 to 29: Probability of obesity is 0.3728.
+    Age 30 to 39: Probability increases to 0.4528.
+    Age 40 to 54: Highest probability at 0.4556.
+    Age 55 to 69: Probability decreases to 0.3887.
+    Age 70 and older: Lowest probability at 0.2775.
+
+Conclusion: Middle-aged adults (30-54 years) have the highest probability of obesity, while the youngest (18-29 years) and oldest (70+ years) groups have the lowest probabilities.
+General Health (genhlth)
+
+    Excellent (1): Probability of obesity is 0.2215.
+    Very good (2): Probability increases to 0.2940.
+    Good (3): Higher probability at 0.4223.
+    Fair (4): Highest probability at 0.4508.
+    Poor (5): Probability is 0.3998.
+
+Conclusion: Poorer general health status is strongly associated with a higher probability of obesity, emphasizing the need for health improvement programs to combat obesity.
+Heart Disease (hrtdisease)
+
+    No (2): Probability of obesity is 0.3849.
+    Yes (1): Higher probability at 0.4157.
+
+Conclusion: Individuals with heart disease have a higher probability of being obese compared to those without heart disease.
+Diabetes (diabetic)
+
+    No (3): Probability at 0.3397.
+    Yes, but not currently treated (1): Highest probability at 0.5724.
+    Yes, currently treated (2): Probability decreases to 0.4189.
+    Yes, with complications (4): Higher probability at 0.5392.
+
+Conclusion: Diabetic status, especially untreated or with complications, is significantly associated with higher probabilities of obesity.
+Marital Status (marital)
+
+    Married (1): Probability of obesity is 0.4061.
+    Widowed (2): Lower probability at 0.3805.
+    Divorced (3): Even lower at 0.3681.
+    Separated (4): Probability is 0.3824.
+    Never married (5): Probability is 0.3780.
+    Living with partner (6): Lowest probability at 0.3658.
+
+Conclusion: Being married is associated with a higher probability of obesity compared to other marital statuses.
+Education Level (edu)
+
+    College or more: Probability of obesity is 0.3895.
+    Elementary or less: Slightly higher probability at 0.4037.
+    High school or equivalent: Lower probability at 0.3854.
+
+Conclusion: Individuals with lower education levels (elementary or less) have a slightly higher probability of obesity compared to those with higher education.
+Employment Status (employstatus)
+
+    Employed (1): Highest probability at 0.4190.
+    Unemployed (2): Lower probability at 0.3278.
+    Retired (3): Probability is 0.3519.
+    Unable to work (4): Probability is 0.3813.
+    Homemaker (5): Probability is 0.3785.
+    Student (6): Probability is 0.3728.
+    Other (7): Probability is 0.3669.
+    Self-employed (8): Probability is 0.3999.
+
+Conclusion: Employment status significantly impacts obesity, with employed individuals having the highest probability of obesity.
+Income Group (income_group)
+
+    Middle Income: Probability of obesity is 0.3959.
+    Low Income: Similar probability to Middle Income at 0.3820.
+    High Income: Similar probability at 0.3828.
+
+Conclusion: Middle-income individuals have a slightly higher probability of obesity compared to low and high-income groups.
+Smoking Status (smokeday)
+
+    Daily smoker (3): Highest probability at 0.4276.
+    Never smoked (1): Probability of obesity is 0.3262.
+    Occasionally smokes (2): Slightly lower probability at 0.3181.
+
+Conclusion: Daily smokers have a significantly higher probability of obesity compared to never smokers and occasional smokers.
+Total Physical Activity (totinda)
+
+    Low (1): Probability of obesity is 0.3544.
+    High (2): Significantly higher probability at 0.4510.
+
+Conclusion: Higher physical activity levels are associated with higher probabilities of obesity, suggesting a complex relationship.
+Sex (sex)
+
+    Female (1): Probability of obesity is 0.3630.
+    Male (2): females. have a significantly higher probability of obesity compared to females.
+
+```{r}
+# Calculate marginal effects using the effects package
+effect_list <- allEffects(model1)
+
+# Print each effect for better readability
+for (effect_name in names(effect_list)) {
+  print(effect_list[[effect_name]])
+}
+```
+
+### Random Effects Interpretation
+
+The random effect for state captures the variability in the intercept across different states. The variance of the random effect is 0.01606 with a standard deviation of 0.1267, indicating some variation in the baseline likelihood of obesity between states.
+
+
+ Random Effects (State-Level Variability):Highest Baseline Odds of Obesity:
+      *  Wisconsin
+      *  Iowa
+       * North Dakota
+
+    Lowest Baseline Odds of Obesity:
+      *  Colorado
+      *  Puerto Rico
+      *  Utah
+
+
+```{r}
+# Random effects
+ranef(model1)
+```
+
+### Evaluating the Model: Key Parameters and Their Uses
+
+Odds Ratio
+
+    Definition: A measure of the association between a predictor variable and the outcome (obesity). It represents the odds of the outcome occurring with the predictor present compared to the odds of it occurring without the predictor.
+    Interpretation: An odds ratio greater than 1 indicates increased odds of obesity; less than 1 indicates decreased odds.
+
+CI (Confidence Interval)
+
+    CI_Lower: The lower bound of the 95% confidence interval for the odds ratio.
+    CI_Upper: The upper bound of the 95% confidence interval for the odds ratio.
+    Definition: A range within which the true odds ratio is expected to fall 95% of the time.
+    Interpretation: If the CI does not include 1, the predictor is statistically significant.
+
+p-value
+
+    Definition: A measure of the statistical significance of the predictor's effect on the outcome. It indicates the probability of observing the data, assuming the null hypothesis is true.
+    Interpretation: A p-value less than 0.05 typically indicates that the predictor is statistically significant.
+
+Residual Variance (σ2σ2)
+
+    Definition: The variance of the residuals (the part of the outcome not explained by the predictors and random effects).
+    Interpretation: Indicates the variability in the outcome after accounting for fixed and random effects.
+
+Tau_00 (τ00τ00​)
+
+    Definition: The variance of the random intercept for "state".
+    Interpretation: Indicates the variability in the outcome attributable to differences between states.
+
+ICC (Intraclass Correlation Coefficient)
+
+    Definition: The proportion of the total variance in the outcome that is attributable to differences between groups (states).
+    Interpretation: Higher ICC values indicate more variability is due to between-group differences.
+
+N_Groups
+
+    Definition: The number of unique groups (states) in the data.
+    Interpretation: Indicates the number of levels of the random effect.
+
+Observations
+
+    Definition: The total number of observations in the dataset.
+    Interpretation: Indicates the sample size used in the analysis.
+
+
+
+
+```{r}
+#  Extract fixed effects
+fixed_effects <- summary(model1)$coefficients$cond
+odds_ratios <- exp(fixed_effects[, "Estimate"])
+conf_int <- exp(confint(model1, parm = "beta_"))
+p_values <- fixed_effects[, "Pr(>|z|)"]
+
+fixed_effects_df <- data.frame(
+  Predictor = rownames(fixed_effects),
+  Odds_Ratio = odds_ratios,
+  CI_Lower = conf_int[, 1],
+  CI_Upper = conf_int[, 2],
+  p_value = p_values
+)
+
+# Print the fixed effects with odds ratios, confidence intervals, and p-values
+print(fixed_effects_df)
+
+# Extract random effects
+random_effects <- summary(model1)$varcor$cond$state
+residual_variance <- attr(summary(model1)$varcor$cond, "sc")^2
+tau_00 <- random_effects[1, 1]
+icc <- tau_00 / (tau_00 + residual_variance)
+
+# Number of groups (states)
+n_groups <- length(unique(filtered_data$state))
+
+# Number of observations
+n_observations <- nrow(filtered_data)
+
+# Print the random effects and other statistics
+random_effects_df <- data.frame(
+  Residual_Variance = residual_variance,
+  Tau_00 = tau_00,
+  ICC = icc,
+  N_Groups = n_groups,
+  Observations = n_observations
+)
+
+print(random_effects_df)
+```
+
+### Odds ratio
+
+The plot shows the odds ratios for the predictors of obesity status from the fitted generalized linear mixed model. Here are the insights you can include in your research based on the plot:
+General Observations
+
+    Blue Diamonds: Predictors that increase the likelihood of obesity.
+    Red Diamonds: Predictors that decrease the likelihood of obesity.
+    Horizontal Lines: Confidence intervals, showing the range within which the true effect likely falls.
+
+    Odds Ratios (OR): The plot shows the odds ratios and their confidence intervals for each predictor. An OR greater than 1 indicates an increased likelihood of obesity, while an OR less than 1 indicates a decreased likelihood.
+    Statistical Significance: Predictors with confidence intervals that do not cross 1 are statistically significant.
+
+
+```{r}
+# Visualize the model using sjPlot with adjusted x-axis scale
+plot_model(model1, axis.lim = c(0.5,3.5))
+```
+
+
+
+        
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
